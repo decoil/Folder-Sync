@@ -1,140 +1,229 @@
 # FolderSync
 
-A robust one-way folder synchronization tool for .NET, inspired by the [Unison File Synchronizer](https://web.mit.edu/6.033/2012/wwwdocs/papers/unisonimpl.pdf) architecture. FolderSync maintains an exact replica of a source folder, efficiently detecting and propagating changes while maintaining data integrity.
+A production-ready .NET folder synchronization service that maintains an exact replica of a source directory with comprehensive logging, hash-based integrity verification, and optimized performance.
 
-## Features
+## Quick Start
 
-- **One-way synchronization** from source to replica folder
-- **Content-based change detection** using MD5 hashing
-- **Efficient incremental updates** - only changed files are synchronized
-- **Automatic directory management** - creates and removes directories as needed
-- **Comprehensive logging** to both console and file
-- **Periodic synchronization** with configurable intervals
-- **Graceful shutdown** with Ctrl+C support
-- **Archive-based state tracking** for reliable change detection
+```bash
+# Build the application
+dotnet build --configuration Release
+
+# Run synchronization
+./FolderSync "/path/to/source" "/path/to/replica" 300 "/path/to/sync.log"
+```
 
 ## Installation
 
 ### Prerequisites
-- .NET 6.0 or later
-- Windows, Linux, or macOS
+- .NET 6.0 SDK or later
+- Operating System: Windows, macOS, or Linux
 
-### Building from Source
+### Build from Source
 ```bash
-git clone https://github.com/yourusername/FolderSync.git
-cd FolderSync
-dotnet build -c Release
+git clone https://github.com/decoil/Folder-Sync.git
+cd Folder-Sync
+dotnet restore
+dotnet build --configuration Release
 ```
 
 ## Usage
 
-```bash
-dotnet run -- <source> <replica> <interval_seconds> <log_file>
+```
+FolderSync <source> <replica> <interval_seconds> <log_file>
 ```
 
-### Parameters
-- `source`: Path to the source folder to synchronize from
-- `replica`: Path to the replica folder to synchronize to
-- `interval_seconds`: How often to perform synchronization (in seconds)
-- `log_file`: Path to the log file for operation history
+### Arguments
+- `source`: Source directory path (must exist)
+- `replica`: Replica directory path (created if missing)
+- `interval_seconds`: Synchronization interval in seconds (positive integer)
+- `log_file`: Log file path (directory created if missing)
 
-### Example
+### Examples
+
 ```bash
-dotnet run -- /path/to/source /path/to/replica 60 sync.log
+# Sync every 5 minutes with detailed logging
+./FolderSync "/home/user/documents" "/backup/documents" 300 "/var/log/foldersync.log"
+
+# Development sync every 30 seconds
+./FolderSync "./src" "./backup" 30 "./sync.log"
 ```
 
-This will synchronize `/path/to/source` to `/path/to/replica` every 60 seconds, logging all operations to `sync.log`.
+## Features
+
+### Core Functionality
+- **One-way synchronization**: Maintains replica as exact copy of source
+- **Continuous monitoring**: Configurable interval-based synchronization
+- **Hash verification**: MD5 content hashing for integrity validation
+- **Directory management**: Full support for files, subdirectories, and empty directories
+- **Atomic operations**: Individual file operations with failure isolation
+
+### Performance Optimizations
+- **Selective hashing**: Content hash computed only when file metadata changes
+- **State caching**: Metadata persistence between sync cycles
+- **Async I/O**: Non-blocking file operations with 80KB buffer size
+- **Efficient scanning**: Skip unchanged files based on size/timestamp comparison
+
+### Reliability
+- **Graceful error handling**: Service continues despite individual file failures
+- **Signal handling**: Clean shutdown on CTRL+C
+- **Comprehensive logging**: Dual output to console and file with structured format
+- **Timestamp preservation**: Maintains original file creation and modification times
 
 ## Architecture
 
-FolderSync's architecture is inspired by the Unison file synchronizer, implementing a clean separation of concerns through distinct components that handle different aspects of the synchronization process.
-
-### Component Overview
-
+### Project Structure
 ```
-┌─────────────────────────────────────────────────┐
-│              FileSynchronizer                   │
-│         (Main Orchestration Layer)              │
-└─────────────┬───────────────────────────────────┘
-              │
-              ├──────────────┬──────────────┬──────────────┐
-              ▼              ▼              ▼              ▼
-┌──────────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
-│  UpdateDetector  │ │  Reconciler  │ │TransportAgent│ │ArchiveManager│
-│                  │ │              │ │              │ │              │
-│  Scans folders   │ │  Computes    │ │  Executes    │ │  Persists    │
-│  & computes      │ │  sync plan   │ │  file ops    │ │  archive     │
-│  content hashes  │ │  (diff)      │ │              │ │  state       │
-└──────────────────┘ └──────────────┘ └──────────────┘ └──────────────┘
+FolderSync/
+├── Program.cs                  # Entry point and service orchestration
+├── Models/
+│   ├── FileMetadata.cs        # Immutable file metadata records
+│   ├── SyncConfiguration.cs   # Configuration data structure
+│   ├── SyncOperation.cs       # Operation discriminated union
+│   └── ValidationResult.cs    # Validation result container
+├── Core/
+│   ├── FileSynchronizer.cs    # Main synchronization coordinator
+│   ├── DirectoryScanner.cs    # Recursive directory traversal
+│   ├── SyncPlanner.cs         # Diff algorithm implementation
+│   └── FileOperations.cs      # File system operation executor
+├── Infrastructure/
+│   ├── ILogger.cs             # Logging abstraction
+│   └── CompositeLogger.cs     # Console and file logging implementation
+└── Validation/
+    └── ArgumentValidator.cs    # Command-line argument validation
 ```
 
-### Core Components
+### Synchronization Algorithm
 
-#### 1. **Update Detector**
-- Recursively scans directories to build a complete file inventory
-- Computes MD5 content hashes for each file
-- Creates an immutable `Archive` snapshot representing the current state
-- Similar to Unison's archive building phase
+1. **Directory Scanning**
+   - Recursive traversal of source and replica directories
+   - Collection of file metadata (path, size, timestamps)
+   - Selective hash computation for modified files only
 
-#### 2. **Reconciler**
-- Compares source and replica archives to determine required operations
-- Generates an immutable sync plan with three operation types:
-  - `Create`: File exists in source but not in replica
-  - `Update`: File exists in both but content differs
-  - `Delete`: File exists in replica but not in source
-- Implements Unison's reconciliation algorithm for one-way sync
+2. **Change Detection**
+   - Comparison of source and replica metadata
+   - Identification of create, update, and delete operations
+   - Empty directory handling
 
-#### 3. **Transport Agent**
-- Executes the sync plan by performing actual file operations
-- Handles file copying with proper error handling
-- Preserves file modification times
-- Automatically manages directory creation and cleanup
-- Corresponds to Unison's transport layer
+3. **Operation Planning**
+   - Generation of minimal operation set
+   - Prioritization of operations for consistency
 
-#### 4. **Archive Manager**
-- Persists archive state to `.sync_archive.json` in the replica folder
-- Enables future optimizations for detecting changes since last sync
-- Provides crash recovery capabilities
+4. **Execution**
+   - Atomic file operations with individual error handling
+   - Progress logging and error reporting
+   - State persistence for next iteration
 
 ### Data Structures
 
-The system uses immutable data structures throughout for thread safety and reliability:
+#### FileMetadata Record
+```csharp
+public record FileMetadata(
+    string RelativePath,
+    long Size,
+    DateTime LastModified,
+    string? ContentHash = null
+);
+```
 
-- **FileMetadata**: Immutable record containing file path, size, modification time, and content hash
-- **Archive**: Immutable snapshot of a directory's state at a point in time
-- **SyncOperation**: Discriminated union representing the three types of sync operations
+#### Sync Operations
+- `Create(string, FileMetadata)` - New file creation
+- `Update(string, FileMetadata, FileMetadata)` - File modification
+- `Delete(string)` - File removal
+- `CreateDirectory(string)` - Directory creation
+- `DeleteDirectory(string)` - Directory removal
 
-### Synchronization Flow
+## Configuration
 
-1. **Scanning Phase**: UpdateDetector scans both source and replica directories
-2. **Reconciliation Phase**: Reconciler compares archives and generates sync plan
-3. **Propagation Phase**: TransportAgent executes the sync plan
-4. **Persistence Phase**: ArchiveManager saves the new state
+### Command Line Validation
+- Source directory existence verification
+- Replica directory creation (if missing)
+- Positive integer interval validation
+- Log file path accessibility check
 
-This architecture ensures:
-- **Reliability**: Each phase is isolated and can be retried independently
-- **Efficiency**: Only changed files are processed
-- **Consistency**: Operations are applied atomically
-- **Observability**: All operations are logged for audit trails
+### Runtime Behavior
+- **Hash Computation**: Triggered only when file size or modification time changes
+- **Error Recovery**: Individual operation failures logged but don't halt service
+- **Empty Directory Handling**: Preserved in replica with trailing slash notation
+- **Cleanup**: Orphaned empty directories automatically removed
 
-## Features in Detail
+## Logging
 
-### Change Detection
-Files are considered changed when their MD5 hash differs, ensuring content-based comparison rather than relying solely on timestamps or file sizes.
+### Log Format
+```
+[YYYY-MM-DD HH:mm:ss.fff] [LEVEL] Message
+```
 
-### Logging
-The `CompositeLogger` provides dual logging to:
-- Console for real-time monitoring
-- Log file for persistent audit trail
+### Log Levels
+- `INFO`: Normal operations and status updates
+- `WARN`: Non-critical issues (access denied, missing files)
+- `ERROR`: Operation failures and exceptions
 
-Each operation is timestamped and categorized (CREATE, UPDATE, DELETE).
+### Sample Output
+```
+[2024-01-15 10:30:45.123] [INFO] === Folder Synchronization Service Started ===
+[2024-01-15 10:30:45.124] [INFO] Source: /home/user/documents
+[2024-01-15 10:30:45.125] [INFO] Replica: /backup/documents
+[2024-01-15 10:30:47.331] [INFO] --- Synchronization started at 2024-01-15 10:30:47 ---
+[2024-01-15 10:30:47.445] [INFO] Executing 3 operations...
+[2024-01-15 10:30:47.446] [INFO] [CREATE] documents/report.pdf
+[2024-01-15 10:30:47.512] [INFO] [UPDATE] documents/readme.txt
+[2024-01-15 10:30:47.513] [INFO] [DELETE] documents/old_file.tmp
+[2024-01-15 10:30:47.514] [INFO] Operations completed: 3 successful, 0 failed
+```
 
-### Error Handling
-- Graceful handling of missing directories
-- Automatic creation of replica directory if it doesn't exist
-- Comprehensive exception logging
-- Thread-safe file operations
+## Performance Characteristics
+
+### Computational Complexity
+- **Memory Usage**: O(n) where n = total file count
+- **Hash Computation**: O(m) where m = modified files only
+- **Directory Traversal**: O(n) with early termination optimizations
+
+### I/O Optimization
+- Asynchronous file operations prevent blocking
+- 80KB buffer size for optimal throughput
+- Minimal redundant filesystem access through state caching
+
+## Error Handling
+
+### Recoverable Errors
+- Individual file access failures
+- Temporary I/O exceptions
+- Permission denied errors
+
+### Fatal Errors  
+- Invalid command-line arguments
+- Source directory inaccessibility
+- Log file creation failures
+
+### Exit Codes
+- `0`: Successful execution
+- `1`: Fatal error or invalid arguments
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+### Development Setup
+```bash
+git clone https://github.com/decoil/Folder-Sync.git
+cd Folder-Sync
+dotnet restore
+dotnet build
+dotnet test  # Run unit tests
+```
 
 ## License
 
-MIT
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Technical Notes
+
+- **Thread Safety**: Service uses `SemaphoreSlim` for log file synchronization
+- **Platform Compatibility**: Cross-platform path handling with `Path.GetRelativePath()`
+- **Resource Management**: Proper disposal of `MD5` instances and file streams
+- **Signal Handling**: `Console.CancelKeyPress` for graceful shutdown
+- **Async Patterns**: Consistent use of `async/await` throughout the codebase
