@@ -1,6 +1,6 @@
 # FolderSync
 
-A production-ready .NET folder synchronization service that maintains an exact replica of a source directory with comprehensive logging, hash-based integrity verification, and optimized performance.
+A .NET-based folder synchronizer that maintains an exact replica of a source directory with comprehensive logging, hash-based integrity verification, and optimized performance.
 
 ## Quick Start
 
@@ -160,7 +160,7 @@ public record FileMetadata(
 
 ### Sample Output
 ```
-[2024-01-15 10:30:45.123] [INFO] === Folder Synchronization Service Started ===
+[2024-01-15 10:30:45.123] [INFO] Starting folder synchronization...
 [2024-01-15 10:30:45.124] [INFO] Source: /home/user/documents
 [2024-01-15 10:30:45.125] [INFO] Replica: /backup/documents
 [2024-01-15 10:30:47.331] [INFO] --- Synchronization started at 2024-01-15 10:30:47 ---
